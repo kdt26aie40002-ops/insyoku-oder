@@ -69,6 +69,48 @@ class MenuTest(ServerTestCase):
         status, _ = self.request("PATCH", f"/api/menu/{item['id']}", {"sold_out": "yes"})
         self.assertEqual(status, 400)
 
+    def test_seed_has_recommended_items(self):
+        recommended = [i["name"] for i in self.menu_items() if i["recommended"]]
+        self.assertEqual(sorted(recommended), sorted(db.RECOMMENDED_ITEMS))
+
+    def test_recommended_toggle_only_changes_given_field(self):
+        item = next(i for i in self.menu_items() if not i["recommended"])
+        self.ok("PATCH", f"/api/menu/{item['id']}", {"sold_out": True})
+        updated = self.ok("PATCH", f"/api/menu/{item['id']}", {"recommended": True})
+        self.assertTrue(updated["recommended"])
+        self.assertTrue(updated["sold_out"])
+        self.assertEqual(self.request("PATCH", f"/api/menu/{item['id']}", {})[0], 400)
+        self.assertEqual(self.request("PATCH", "/api/menu/99999", {"recommended": True})[0], 404)
+
+
+class MigrationTest(unittest.TestCase):
+    def test_old_database_gets_recommended_column(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            path = Path(tmp) / "old.db"
+            conn = db.connect(path)
+            # recommended 列がなかった頃のスキーマを再現する
+            old_schema = "\n".join(
+                line for line in db.SCHEMA.splitlines()
+                if not line.lstrip().startswith(("recommended ", "tags ", "allergens ", "age_group ", "gender "))
+            )
+            conn.executescript(old_schema)
+            conn.execute("INSERT INTO tables (id, name) VALUES (1, 'テーブル 1')")
+            conn.execute("INSERT INTO categories (id, name) VALUES (1, 'テスト')")
+            conn.execute("INSERT INTO menu_items (category_id, name, price) VALUES (1, 'カルボナーラ', 799)")
+            conn.execute("INSERT INTO menu_items (category_id, name, price) VALUES (1, 'ライス', 199)")
+            conn.commit()
+            self.assertNotIn("recommended", {r["name"] for r in conn.execute("PRAGMA table_info(menu_items)")})
+            conn.close()
+
+            db.init_db(path)
+            conn = db.connect(path)
+            rows = {r["name"]: (r["recommended"], r["tags"], r["allergens"])
+                    for r in conn.execute("SELECT * FROM menu_items")}
+            session_columns = {r["name"] for r in conn.execute("PRAGMA table_info(sessions)")}
+            conn.close()
+            self.assertEqual(rows, {"カルボナーラ": (1, "hearty", "egg,milk,wheat,pork"), "ライス": (0, "", "")})
+            self.assertLessEqual({"age_group", "gender", "allergens"}, session_columns)
+
 
 class OrderFlowTest(ServerTestCase):
     def test_full_flow_from_seating_to_checkout(self):
@@ -178,6 +220,110 @@ class OrderFlowTest(ServerTestCase):
         self.ok("POST", "/api/tables/1/orders", {"items": [{"menu_item_id": item["id"], "quantity": 1}]})
         self.assertEqual(self.ok("GET", "/api/tables/2")["total"], 0)
         self.assertEqual(self.ok("GET", "/api/tables/1")["orders"][0]["items"][0]["unit_price"], item["price"])
+
+
+class PersonalRecommendationTest(ServerTestCase):
+    def names(self, table_id=1):
+        res = self.ok("GET", f"/api/tables/{table_id}/recommendations")
+        by_id = {i["id"]: i for i in self.menu_items()}
+        return [by_id[r["menu_item_id"]]["name"] for r in res["items"]], res
+
+    def set_profile(self, table_id, age_group, gender="unspecified"):
+        return self.ok("POST", f"/api/tables/{table_id}/profile", {"age_group": age_group, "gender": gender})
+
+    def test_profile_requires_session_and_valid_values(self):
+        self.assertEqual(self.request("POST", "/api/tables/1/profile", {"age_group": "30s"})[0], 409)
+        self.start()
+        self.assertEqual(self.request("POST", "/api/tables/1/profile", {"age_group": "99s"})[0], 400)
+        self.assertEqual(self.request("POST", "/api/tables/1/profile", {"age_group": "30s", "gender": "x"})[0], 400)
+        table = self.set_profile(1, "30s", "female")
+        self.assertEqual(table["session"]["profile_label"], "30代・女性")
+        self.assertEqual(self.set_profile(1, "60plus")["session"]["profile_label"], "60歳以上")
+
+    def test_no_profile_means_no_recommendations(self):
+        self.assertEqual(self.names()[1], {"profile": None, "items": []})
+        self.start()
+        self.assertEqual(self.names()[1], {"profile": None, "items": []})
+
+    def test_minors_are_never_recommended_alcohol(self):
+        self.start(1)
+        self.set_profile(1, "30s", "male")
+        self.assertIn("生ビール", self.names(1)[0])
+        for age in ("child", "teen"):
+            with self.subTest(age=age):
+                self.set_profile(1, age, "male")
+                names, _ = self.names(1)
+                self.assertNotIn("生ビール", names)
+                self.assertTrue(names)
+
+    def test_results_are_limited_diverse_and_skip_sold_out(self):
+        self.start()
+        self.set_profile(1, "20s", "male")
+        names, res = self.names()
+        self.assertLessEqual(len(names), 6)
+        by_id = {i["id"]: i for i in self.menu_items()}
+        categories = [by_id[r["menu_item_id"]]["category_id"] for r in res["items"]]
+        self.assertTrue(all(categories.count(c) <= 2 for c in categories))
+        self.assertTrue(all(r["reason"] for r in res["items"]))
+        first = res["items"][0]["menu_item_id"]
+        self.ok("PATCH", f"/api/menu/{first}", {"sold_out": True})
+        self.assertNotIn(first, [r["menu_item_id"] for r in self.names()[1]["items"]])
+
+    def test_popular_items_among_same_profile_rise_to_top(self):
+        tiramisu = next(i for i in self.menu_items() if i["name"] == "ティラミス")
+        # 過去に同じ層（20代・女性）のお客様がティラミスをたくさん注文した
+        for _ in range(3):
+            self.start(2)
+            self.set_profile(2, "20s", "female")
+            self.ok("POST", "/api/tables/2/orders", {"items": [{"menu_item_id": tiramisu["id"], "quantity": 2}]})
+            self.ok("POST", "/api/tables/2/close")
+        self.start(1)
+        self.set_profile(1, "20s", "female")
+        top = self.names(1)[1]["items"][0]
+        self.assertEqual(top["menu_item_id"], tiramisu["id"])
+        self.assertEqual(top["reason"], "同じ年代・性別のお客様に人気")
+        # 別の層には影響しない
+        self.set_profile(1, "60plus", "male")
+        reasons = [r["reason"] for r in self.names(1)[1]["items"]]
+        self.assertNotIn("同じ年代・性別のお客様に人気", reasons)
+
+
+class AllergyTest(ServerTestCase):
+    def test_menu_lists_allergens_per_item(self):
+        menu = self.ok("GET", "/api/menu")
+        self.assertIn({"key": "egg", "label": "卵"}, menu["allergens"])
+        items = {i["name"]: i for c in menu["categories"] for i in c["items"]}
+        self.assertEqual(items["エビグラタン"]["allergens"], ["milk", "wheat", "shrimp"])  # ALLERGENS の順
+        self.assertEqual(items["ライス"]["allergens"], [])
+
+    def test_set_allergens_validates_and_resets_on_checkout(self):
+        self.assertEqual(self.request("POST", "/api/tables/1/allergens", {"allergens": ["egg"]})[0], 409)
+        self.start()
+        self.assertEqual(self.request("POST", "/api/tables/1/allergens", {"allergens": ["poison"]})[0], 400)
+        self.assertEqual(self.request("POST", "/api/tables/1/allergens", {"allergens": "egg"})[0], 400)
+        table = self.ok("POST", "/api/tables/1/allergens", {"allergens": ["milk", "egg", "egg"]})
+        self.assertEqual(table["session"]["allergens"], ["egg", "milk"])
+        self.assertEqual(table["session"]["allergen_labels"], ["卵", "乳"])
+        self.ok("POST", "/api/tables/1/close")
+        self.assertEqual(self.start()["session"]["allergens"], [])
+
+    def test_recommendations_exclude_allergens(self):
+        allergens_of = {i["id"]: set(i["allergens"]) for i in self.menu_items()}
+        self.start()
+        self.ok("POST", "/api/tables/1/profile", {"age_group": "child", "gender": "unspecified"})
+        before = self.ok("GET", "/api/tables/1/recommendations")["items"]
+        self.assertTrue(any(allergens_of[r["menu_item_id"]] & {"egg", "milk"} for r in before))
+        self.ok("POST", "/api/tables/1/allergens", {"allergens": ["egg", "milk"]})
+        after = self.ok("GET", "/api/tables/1/recommendations")["items"]
+        self.assertTrue(after)
+        self.assertFalse(any(allergens_of[r["menu_item_id"]] & {"egg", "milk"} for r in after))
+
+    def test_kitchen_ticket_shows_table_allergies(self):
+        item = self.menu_items()[0]
+        self.start()
+        self.ok("POST", "/api/tables/1/allergens", {"allergens": ["shrimp"]})
+        self.ok("POST", "/api/tables/1/orders", {"items": [{"menu_item_id": item["id"], "quantity": 1}]})
+        self.assertEqual(self.ok("GET", "/api/kitchen")["orders"][0]["allergen_labels"], ["えび"])
 
 
 class CallTest(ServerTestCase):

@@ -1,51 +1,95 @@
+/* 黒と金を基調にした共通スタイル。フォントは端末内の明朝体を使う（外部読み込みなし＝オフラインでも同じ見た目） */
 :root {
-  --bg: #fff8f0;
-  --surface: #ffffff;
-  --surface-2: #f6ece1;
-  --text: #2b2118;
-  --muted: #7a6a5c;
-  --border: #ead9c6;
-  --primary: #d9480f;
-  --primary-dark: #b33c0c;
-  --success: #2b8a3e;
-  --warn: #e67700;
-  --danger: #c92a2a;
-  --radius: 14px;
-  --shadow: 0 2px 10px rgba(60, 30, 0, .08);
-  font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
+  --bg: #11100e;
+  --surface: #1b1815;
+  --surface-2: #25211c;
+  --surface-3: #2f2a23;
+  --text: #f2ebdd;
+  --muted: #a69b88;
+  --border: #3a3329;
+  --gold: #c9a45c;
+  --gold-light: #e3c88f;
+  --gold-dark: #9c7c3c;
+  --primary: var(--gold);
+  --primary-dark: var(--gold-dark);
+  --on-gold: #1a150e;
+  --success: #7fb38c;
+  --warn: #d9a74a;
+  --danger: #d4695e;
+  --radius: 4px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  --serif: "Shippori Mincho", "Noto Serif JP", "Yu Mincho", YuMincho, "Hiragino Mincho ProN", "Hiragino Mincho Pro", "MS PMincho", serif;
+  --sans: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", Meiryo, sans-serif;
+  font-family: var(--serif);
   color: var(--text);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--text); -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(ellipse at top, rgba(201, 164, 92, .07), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  font-feature-settings: "palt";
+}
 [hidden] { display: none !important; }
-h1, h2, h3 { margin: 0 0 .5em; line-height: 1.3; }
-p { margin: 0 0 .75em; }
+h1, h2, h3 { margin: 0 0 .5em; line-height: 1.4; font-weight: 600; letter-spacing: .08em; }
+p { margin: 0 0 .75em; line-height: 1.8; }
 .muted { color: var(--muted); }
 .warning { color: var(--danger); font-weight: bold; }
+.price, .num { font-variant-numeric: tabular-nums lining-nums; }
+
+/* 金の飾り罫：<div class="ornament">文字</div> */
+.ornament {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--gold);
+  letter-spacing: .4em;
+  font-size: .8rem;
+  text-transform: uppercase;
+}
+.ornament::before, .ornament::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold-dark));
+}
+.ornament::after { background: linear-gradient(90deg, var(--gold-dark), transparent); }
 
 button {
   font: inherit;
   cursor: pointer;
-  border: none;
-  border-radius: 10px;
-  padding: .6em 1.1em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .65em 1.2em;
   background: var(--surface-2);
   color: var(--text);
+  letter-spacing: .06em;
   touch-action: manipulation;
-  transition: transform .05s, background .15s;
+  transition: transform .06s, background .2s, border-color .2s, color .2s;
 }
-button:active:not(:disabled) { transform: scale(.97); }
-button:disabled { opacity: .45; cursor: not-allowed; }
-button.primary { background: var(--primary); color: #fff; font-weight: bold; }
-button.primary:hover:not(:disabled) { background: var(--primary-dark); }
-button.success { background: var(--success); color: #fff; font-weight: bold; }
-button.danger { background: var(--danger); color: #fff; }
-button.ghost { background: transparent; border: 1px solid currentColor; }
-button.big { font-size: 1.15rem; padding: .9em 1.4em; }
-button.link-button { background: none; color: var(--muted); text-decoration: underline; }
-button:focus-visible { outline: 3px solid #4dabf7; outline-offset: 2px; }
+button:hover:not(:disabled) { border-color: var(--gold-dark); }
+button:active:not(:disabled) { transform: scale(.98); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+button.primary {
+  background: linear-gradient(180deg, var(--gold-light), var(--gold) 55%, var(--gold-dark));
+  border-color: var(--gold);
+  color: var(--on-gold);
+  font-weight: bold;
+}
+button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+button.outline { background: transparent; border-color: var(--gold-dark); color: var(--gold-light); }
+button.success { background: #3d6b4a; border-color: #5d9a6c; color: #fff; font-weight: bold; }
+button.danger { background: #7c2f28; border-color: var(--danger); color: #fff; }
+button.ghost { background: transparent; }
+button.big { font-size: 1.12rem; padding: .9em 1.6em; }
+button.link-button { background: none; border: none; color: var(--muted); text-decoration: underline; text-underline-offset: 4px; }
+button:focus-visible { outline: 2px solid var(--gold-light); outline-offset: 3px; }
 
 .topbar {
   display: flex;
@@ -53,51 +97,74 @@ button:focus-visible { outline: 3px solid #4dabf7; outline-offset: 2px; }
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 10px 16px;
-  background: var(--surface);
+  padding: 12px 24px;
+  background: rgba(17, 16, 14, .92);
   border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 rgba(201, 164, 92, .15);
   position: sticky;
   top: 0;
   z-index: 10;
+  backdrop-filter: blur(6px);
 }
-.brand { font-size: 1.3rem; font-weight: bold; display: flex; gap: .4em; align-items: center; }
-.topbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.brand { font-size: 1.25rem; font-weight: 600; display: flex; gap: .6em; align-items: center; letter-spacing: .12em; }
+.brand-mark { color: var(--gold); font-size: .9em; }
+.topbar-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 .badge {
   display: inline-block;
-  padding: .15em .6em;
-  border-radius: 999px;
-  font-size: .8rem;
+  padding: .2em .7em;
+  border-radius: 2px;
+  font-family: var(--sans);
+  font-size: .75rem;
   font-weight: bold;
+  letter-spacing: .05em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.status-pending { background: rgba(120, 165, 210, .14); color: #a9c9ea; border-color: rgba(120, 165, 210, .35); }
+.status-cooking { background: rgba(217, 167, 74, .14); color: #e7c27a; border-color: rgba(217, 167, 74, .4); }
+.status-served { background: rgba(127, 179, 140, .14); color: #9fd1ab; border-color: rgba(127, 179, 140, .4); }
+.status-cancelled { background: rgba(255, 255, 255, .04); color: #857b6d; border-color: var(--border); }
+
+/* 「おすすめ」バッジ */
+.rec-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35em;
+  padding: .2em .75em;
+  border: 1px solid var(--gold);
+  color: var(--gold-light);
+  background: rgba(201, 164, 92, .1);
+  font-size: .72rem;
+  letter-spacing: .15em;
   white-space: nowrap;
 }
-.status-pending { background: #e7f5ff; color: #1864ab; }
-.status-cooking { background: #fff4e6; color: #d9480f; }
-.status-served { background: #ebfbee; color: #2b8a3e; }
-.status-cancelled { background: #f1f3f5; color: #868e96; }
+.rec-badge::before { content: "✦"; font-size: .85em; }
 
 dialog {
-  border: none;
+  border: 1px solid var(--gold-dark);
   border-radius: var(--radius);
-  padding: 24px;
-  width: min(560px, calc(100vw - 32px));
+  padding: 28px;
+  width: min(580px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, .25);
+  background: var(--surface);
   color: var(--text);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .6), inset 0 0 0 4px var(--surface), inset 0 0 0 5px rgba(201, 164, 92, .25);
 }
-dialog::backdrop { background: rgba(30, 15, 0, .5); }
-.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+dialog::backdrop { background: rgba(5, 4, 3, .75); backdrop-filter: blur(3px); }
+dialog h2 { text-align: center; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
 
-.stepper { display: inline-flex; align-items: center; gap: 12px; }
-.stepper button { width: 48px; height: 48px; padding: 0; font-size: 1.4rem; border-radius: 50%; }
-.stepper output { min-width: 2ch; text-align: center; font-size: 1.4rem; font-weight: bold; }
-.stepper.small button { width: 34px; height: 34px; font-size: 1.1rem; }
+.stepper { display: inline-flex; align-items: center; gap: 14px; }
+.stepper button { width: 48px; height: 48px; padding: 0; font-size: 1.3rem; border-radius: 50%; border-color: var(--gold-dark); background: transparent; color: var(--gold-light); }
+.stepper output { min-width: 2ch; text-align: center; font-size: 1.4rem; font-weight: bold; font-variant-numeric: tabular-nums; }
+.stepper.small button { width: 32px; height: 32px; font-size: 1rem; }
 .stepper.small output { font-size: 1.05rem; }
 
 .toast-area {
   position: fixed;
   left: 50%;
-  bottom: 24px;
+  bottom: 28px;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -107,13 +174,20 @@ dialog::backdrop { background: rgba(30, 15, 0, .5); }
   max-width: calc(100vw - 32px);
 }
 .toast {
-  padding: 12px 20px;
-  border-radius: 10px;
-  background: #343a40;
-  color: #fff;
+  padding: 14px 24px;
+  border: 1px solid var(--gold-dark);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
   box-shadow: var(--shadow);
-  animation: toast-in .2s ease-out;
+  letter-spacing: .05em;
+  animation: toast-in .25s ease-out;
 }
-.toast.success { background: var(--success); }
-.toast.error { background: var(--danger); }
+.toast.success { border-color: var(--gold); }
+.toast.error { border-color: var(--danger); color: #f3c0ba; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+/* 店名（尾関屋） */
+.store-name { color: var(--gold-light); letter-spacing: .25em; }
+.brand-sep { width: 1px; height: 1.1em; background: var(--gold-dark); margin: 0 .2em; }
+.brand-sep:last-child, .brand-sep:has(+ :empty) { display: none; }

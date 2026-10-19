@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     guests                INTEGER NOT NULL,
     started_at            TEXT NOT NULL,
     checkout_requested_at TEXT,
+    age_group             TEXT,   -- お客様が入力した代表者の年代（おすすめ用・任意）
+    gender                TEXT,   -- 同じく性別（任意）
+    allergens             TEXT NOT NULL DEFAULT '',  -- お客様が指定したアレルギー（カンマ区切り）
     closed_at             TEXT
 );
 -- 1 テーブルにつき利用中のセッションは 1 つだけ
@@ -36,6 +39,9 @@ CREATE TABLE IF NOT EXISTS menu_items (
     price       INTEGER NOT NULL,          -- 税込価格（円）
     icon        TEXT NOT NULL DEFAULT '🍽️',
     sold_out    INTEGER NOT NULL DEFAULT 0,
+    recommended INTEGER NOT NULL DEFAULT 0,  -- テーブル端末の「本日のおすすめ」に表示
+    tags        TEXT NOT NULL DEFAULT '',    -- おすすめ判定用の特徴（カンマ区切り。api.TAG_REASONS 参照）
+    allergens   TEXT NOT NULL DEFAULT '',    -- 含まれるアレルゲン（カンマ区切り。api.ALLERGENS 参照）
     sort        INTEGER NOT NULL DEFAULT 0
 );
 
@@ -103,6 +109,54 @@ MENU_ITEMS = [
     (6, "生ビール", "キンキンに冷えた生ビール", 499, "🍺"),
 ]
 
+# 初期データで「おすすめ」にする商品
+RECOMMENDED_ITEMS = ("サーロインステーキ 200g", "チーズインハンバーグ", "カルボナーラ", "チョコレートパフェ")
+
+# 年代・性別に合わせたおすすめに使う特徴タグ
+MENU_ITEM_TAGS = {
+    "チーズインハンバーグ": "hearty,kids",
+    "和風おろしハンバーグ": "hearty,healthy",
+    "サーロインステーキ 200g": "hearty",
+    "ミックスグリル": "hearty",
+    "カルボナーラ": "hearty",
+    "ミートソース": "kids",
+    "ミラノ風ドリア": "light,kids",
+    "エビグラタン": "light",
+    "シーザーサラダ": "healthy,light",
+    "コーンポタージュ": "kids,light",
+    "ミネストローネ": "healthy,light",
+    "フライドポテト": "kids",
+    "から揚げ（5個）": "hearty,kids",
+    "チョコレートパフェ": "sweet,kids",
+    "バニラアイス": "sweet,kids,light",
+    "ティラミス": "sweet",
+    "ドリンクバー": "kids",
+    "ホットコーヒー": "light",
+    "オレンジジュース": "kids,healthy",
+    "生ビール": "alcohol",
+}
+
+# 各商品に含まれるアレルゲン（キーは api.ALLERGENS）。記載のない商品は該当なし
+MENU_ITEM_ALLERGENS = {
+    "チーズインハンバーグ": "egg,milk,wheat,soy,beef,pork",
+    "和風おろしハンバーグ": "egg,milk,wheat,soy,beef,pork",
+    "サーロインステーキ 200g": "wheat,soy,beef",
+    "ミックスグリル": "egg,milk,wheat,soy,beef,pork,chicken",
+    "カルボナーラ": "egg,milk,wheat,pork",
+    "ミートソース": "milk,wheat,soy,beef,pork",
+    "ミラノ風ドリア": "milk,wheat,beef,pork",
+    "エビグラタン": "shrimp,milk,wheat",
+    "シーザーサラダ": "egg,milk,wheat",
+    "コーンポタージュ": "milk,wheat",
+    "ミネストローネ": "wheat,pork",
+    "から揚げ（5個）": "wheat,soy,chicken",
+    "パン（2個）": "egg,milk,wheat",
+    "チョコレートパフェ": "egg,milk,wheat,soy",
+    "バニラアイス": "egg,milk",
+    "ティラミス": "egg,milk,wheat",
+    "オレンジジュース": "orange",
+}
+
 
 def connect(path):
     conn = sqlite3.connect(path, timeout=10)
@@ -119,11 +173,55 @@ def init_db(path):
     try:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
+        _migrate(conn)
         if conn.execute("SELECT COUNT(*) FROM tables").fetchone()[0] == 0:
             with conn:
                 _seed(conn)
     finally:
         conn.close()
+
+
+def _columns(conn, table):
+    return {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _migrate(conn):
+    """古いバージョンで作られたデータベースに不足している列を追加する。"""
+    menu_columns = _columns(conn, "menu_items")
+    session_columns = _columns(conn, "sessions")
+    with conn:
+        if "recommended" not in menu_columns:
+            conn.execute("ALTER TABLE menu_items ADD COLUMN recommended INTEGER NOT NULL DEFAULT 0")
+            _mark_recommended(conn)
+        if "tags" not in menu_columns:
+            conn.execute("ALTER TABLE menu_items ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+            _apply_tags(conn)
+        if "allergens" not in menu_columns:
+            conn.execute("ALTER TABLE menu_items ADD COLUMN allergens TEXT NOT NULL DEFAULT ''")
+            _apply_allergens(conn)
+        for column in ("age_group", "gender"):
+            if column not in session_columns:
+                conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} TEXT")
+        if "allergens" not in session_columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN allergens TEXT NOT NULL DEFAULT ''")
+
+
+def _mark_recommended(conn):
+    conn.executemany(
+        "UPDATE menu_items SET recommended = 1 WHERE name = ?", [(n,) for n in RECOMMENDED_ITEMS]
+    )
+
+
+def _apply_tags(conn):
+    conn.executemany(
+        "UPDATE menu_items SET tags = ? WHERE name = ?", [(t, n) for n, t in MENU_ITEM_TAGS.items()]
+    )
+
+
+def _apply_allergens(conn):
+    conn.executemany(
+        "UPDATE menu_items SET allergens = ? WHERE name = ?", [(a, n) for n, a in MENU_ITEM_ALLERGENS.items()]
+    )
 
 
 def _seed(conn):
@@ -140,3 +238,6 @@ def _seed(conn):
         " VALUES (?, ?, ?, ?, ?, ?)",
         [(*item, sort) for sort, item in enumerate(MENU_ITEMS)],
     )
+    _mark_recommended(conn)
+    _apply_tags(conn)
+    _apply_allergens(conn)

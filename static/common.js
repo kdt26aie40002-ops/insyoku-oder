@@ -123,3 +123,10 @@ document.addEventListener('click', (e) => {
   const button = e.target.closest('[data-close]');
   if (button) button.closest('dialog')?.close();
 });
+
+// おすすめ診断の選択肢（キーは api.py の AGE_GROUPS / GENDERS と一致させる）
+export const AGE_OPTIONS = [
+  ['child', '12歳以下'], ['teen', '13〜19歳'], ['20s', '20代'], ['30s', '30代'],
+  ['40s', '40代'], ['50s', '50代'], ['60plus', '60歳以上'],
+];
+export const GENDER_OPTIONS = [['male', '男性'], ['female', '女性'], ['unspecified', '回答しない']];

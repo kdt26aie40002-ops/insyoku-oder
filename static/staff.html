@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ホール / レジ | テーブルオーダー</title>
+<title>ホール / レジ | 尾関屋</title>
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/staff.css">
 <script type="module" src="/staff.js"></script>
 </head>
 <body class="staff">
 <header class="topbar">
-  <div class="brand"><span aria-hidden="true">🧾</span>ホール / レジ</div>
+  <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span class="store-name">尾関屋</span><span class="brand-sep" aria-hidden="true"></span><span>ホール / レジ</span></div>
   <nav class="tabs" aria-label="表示切り替え">
     <button type="button" data-tab="floor" class="active">フロア</button>
-    <button type="button" data-tab="menu">品切れ設定</button>
+    <button type="button" data-tab="menu">メニュー設定</button>
   </nav>
 </header>
 
@@ -31,7 +31,7 @@
 </main>
 
 <main id="menu-view" class="menu-admin" hidden>
-  <p class="muted">「売り切れ」にした商品はテーブル端末で注文できなくなります。</p>
+  <p class="muted">「おすすめ」にした商品はテーブル端末の「本日のおすすめ」に表示されます。「売り切れ」にした商品は注文できなくなります。</p>
   <div id="menu-admin-list"></div>
 </main>
 

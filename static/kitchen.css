@@ -1,19 +1,18 @@
-body.kitchen { --bg: #1f1d1b; --surface: #2c2926; --surface-2: #3a3632; --text: #f4ede6; --muted: #a89e93; --border: #45403b; }
-body.kitchen button { color: var(--text); }
-body.kitchen button.primary, body.kitchen button.success, body.kitchen button.danger { color: #fff; }
+/* キッチンは視認性優先で、本文はゴシック体 */
+body.kitchen { font-family: var(--sans); }
 
 .kitchen-summary { display: flex; gap: 20px; align-items: baseline; font-size: 1.1rem; }
-.kitchen-summary strong { font-size: 1.5rem; }
+.kitchen-summary strong { font-size: 1.5rem; color: var(--gold-light); }
 .kitchen-main { padding: 16px; }
 .empty { text-align: center; color: var(--muted); font-size: 1.3rem; margin-top: 20vh; }
 
 .tickets { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-items: start; }
-.ticket { background: var(--surface); border-radius: var(--radius); overflow: hidden; border-top: 6px solid #4dabf7; }
+.ticket { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; border-top: 5px solid #6f9fcf; }
 .ticket.warn { border-top-color: var(--warn); }
 .ticket.late { border-top-color: #fa5252; }
 .ticket.late .ticket-meta { color: #ff8787; font-weight: bold; }
 .ticket.fresh { animation: flash 1s ease-out 3; }
-@keyframes flash { 50% { box-shadow: 0 0 0 4px #ffd43b; } }
+@keyframes flash { 50% { box-shadow: 0 0 0 4px var(--gold); } }
 .ticket header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 12px 14px; background: var(--surface-2); }
 .ticket-table { font-size: 1.4rem; font-weight: bold; }
 .ticket-meta { color: var(--muted); font-size: .9rem; }
@@ -21,8 +20,9 @@ body.kitchen button.primary, body.kitchen button.success, body.kitchen button.da
 
 .kitchen-item { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; padding: 12px 14px; border-top: 1px solid var(--border); align-items: center; }
 .kitchen-item .name { font-size: 1.15rem; font-weight: bold; }
-.kitchen-item .qty { font-size: 1.3rem; color: #ffd43b; margin-left: .4em; }
-.kitchen-item.cooking { background: rgba(253, 126, 20, .12); }
+.kitchen-item .qty { font-size: 1.3rem; color: var(--gold-light); margin-left: .4em; }
+.kitchen-item.cooking { background: rgba(217, 167, 74, .08); }
 .item-actions { grid-column: 1 / -1; display: flex; gap: 8px; }
 .item-actions button { flex: 1; padding: .7em; }
 .item-actions button.ghost { flex: 0 0 auto; }
+.ticket-allergy { margin: 0; padding: 8px 14px; background: rgba(212, 105, 94, .2); color: #ffc9c2; font-weight: bold; border-bottom: 1px solid var(--danger); }

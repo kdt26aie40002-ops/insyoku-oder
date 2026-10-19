@@ -7,6 +7,7 @@ SSE で全端末へ配信する。端末はイベントを受けて API を再�
 """
 
 import re
+from collections import Counter
 from datetime import datetime
 
 ITEM_STATUSES = ("pending", "cooking", "served", "cancelled")
@@ -22,6 +23,44 @@ CALL_KINDS = ("staff", "water")  # 'checkout' は request_checkout 経由での�
 MAX_GUESTS = 20
 MAX_QTY_PER_ITEM = 20
 MAX_LINES_PER_ORDER = 50
+
+# ---- 年代・性別に合わせたおすすめ
+AGE_GROUPS = {
+    "child": "12歳以下", "teen": "13〜19歳", "20s": "20代", "30s": "30代",
+    "40s": "40代", "50s": "50代", "60plus": "60歳以上",
+}
+GENDERS = {"male": "男性", "female": "女性", "unspecified": "回答しない"}
+MINOR_AGE_GROUPS = {"child", "teen"}  # お酒（alcohol タグ）は絶対におすすめしない
+# 特徴タグごとの加点。年代と性別の重みを足し合わせて使う
+AGE_TAG_WEIGHTS = {
+    "child": {"kids": 3, "sweet": 2},
+    "teen": {"hearty": 3, "sweet": 2, "kids": 1},
+    "20s": {"hearty": 3, "sweet": 1, "alcohol": 1},
+    "30s": {"hearty": 2, "alcohol": 2, "healthy": 1},
+    "40s": {"healthy": 2, "alcohol": 2, "hearty": 1},
+    "50s": {"healthy": 3, "light": 1, "alcohol": 1},
+    "60plus": {"healthy": 3, "light": 2},
+}
+GENDER_TAG_WEIGHTS = {"male": {"hearty": 1}, "female": {"sweet": 1, "healthy": 1}, "unspecified": {}}
+TAG_REASONS = {
+    "hearty": "しっかり食べたい方に",
+    "healthy": "からだにやさしい一品",
+    "light": "軽めに楽しみたい方に",
+    "sweet": "食後のデザートに",
+    "kids": "お子さまに人気",
+    "alcohol": "お食事のおともに",
+}
+POPULARITY_WEIGHT = 3   # 同じ年代・性別で一番売れている商品に与える加点
+STAFF_PICK_WEIGHT = 1   # 店の「おすすめ」設定への加点
+MAX_RECOMMENDATIONS = 6
+MAX_PER_CATEGORY = 2    # 同じカテゴリばかりにならないようにする
+
+# ---- アレルギー（表示義務のある特定原材料 8 品目 + よく問い合わせのある品目）。表示順もこの順
+ALLERGENS = {
+    "egg": "卵", "milk": "乳", "wheat": "小麦", "shrimp": "えび", "crab": "かに",
+    "walnut": "くるみ", "buckwheat": "そば", "peanut": "落花生",
+    "soy": "大豆", "beef": "牛肉", "pork": "豚肉", "chicken": "鶏肉", "sesame": "ごま", "orange": "オレンジ",
+}
 
 
 class ApiError(Exception):
@@ -67,7 +106,24 @@ def _menu_item(row):
         "price": row["price"],
         "icon": row["icon"],
         "sold_out": bool(row["sold_out"]),
+        "recommended": bool(row["recommended"]),
+        "tags": _tags(row),
+        "allergens": _allergens(row),
     }
+
+
+def _tags(row):
+    return [t for t in row["tags"].split(",") if t]
+
+
+def _allergens(row):
+    """カンマ区切りのアレルゲンを ALLERGENS の順に並べたリストで返す（未知のキーは無視）。"""
+    keys = set(row["allergens"].split(","))
+    return [k for k in ALLERGENS if k in keys]
+
+
+def allergen_labels(keys):
+    return [ALLERGENS[k] for k in keys]
 
 
 def get_menu(ctx):
@@ -79,17 +135,28 @@ def get_menu(ctx):
     by_id = {c["id"]: c for c in categories}
     for r in conn.execute("SELECT * FROM menu_items ORDER BY sort, id"):
         by_id[r["category_id"]]["items"].append(_menu_item(r))
-    return {"categories": categories}
+    return {
+        "categories": categories,
+        "allergens": [{"key": k, "label": label} for k, label in ALLERGENS.items()],
+    }
 
 
 def update_menu_item(ctx):
+    """品切れ（sold_out）・おすすめ（recommended）を切り替える。指定したフィールドだけ更新する。"""
     item_id = int(ctx.params["item_id"])
-    sold_out = ctx.body.get("sold_out")
-    if not isinstance(sold_out, bool):
-        raise ApiError(400, "sold_out は true / false で指定してください")
-    cur = ctx.conn.execute("UPDATE menu_items SET sold_out = ? WHERE id = ?", (int(sold_out), item_id))
-    if cur.rowcount == 0:
+    updates = {}
+    for field in ("sold_out", "recommended"):
+        if field in ctx.body:
+            if not isinstance(ctx.body[field], bool):
+                raise ApiError(400, f"{field} は true / false で指定してください")
+            updates[field] = int(ctx.body[field])
+    if not updates:
+        raise ApiError(400, "sold_out または recommended を指定してください")
+    if ctx.conn.execute("SELECT 1 FROM menu_items WHERE id = ?", (item_id,)).fetchone() is None:
         raise ApiError(404, "商品が見つかりません")
+    # 列名は上のホワイトリストから来たものだけなので、SQL に埋め込んでも安全
+    assignments = ", ".join(f"{field} = ?" for field in updates)
+    ctx.conn.execute(f"UPDATE menu_items SET {assignments} WHERE id = ?", (*updates.values(), item_id))
     ctx.emit("menu")
     return _menu_item(ctx.conn.execute("SELECT * FROM menu_items WHERE id = ?", (item_id,)).fetchone())
 
@@ -178,6 +245,11 @@ def _table_view(conn, row):
             "guests": session["guests"],
             "started_at": session["started_at"],
             "checkout_requested_at": session["checkout_requested_at"],
+            "age_group": session["age_group"],
+            "gender": session["gender"],
+            "profile_label": profile_label(session["age_group"], session["gender"]),
+            "allergens": _allergens(session),
+            "allergen_labels": allergen_labels(_allergens(session)),
         },
         "orders": orders,
         "total": _total(orders),
@@ -205,6 +277,39 @@ def start_session(ctx):
         (table["id"], guests, now()),
     )
     ctx.emit("table", table_id=table["id"])
+    return _table_view(conn, table)
+
+
+def set_profile(ctx):
+    """お客様が入力した年代・性別をセッションに保存する（おすすめ表示用）。"""
+    conn = ctx.conn
+    table = _table_row(conn, int(ctx.params["table_id"]))
+    session = _require_open_session(conn, table["id"])
+    age_group = ctx.body.get("age_group")
+    gender = ctx.body.get("gender", "unspecified")
+    if age_group not in AGE_GROUPS:
+        raise ApiError(400, "年代を選んでください")
+    if gender not in GENDERS:
+        raise ApiError(400, "性別の指定が正しくありません")
+    conn.execute(
+        "UPDATE sessions SET age_group = ?, gender = ? WHERE id = ?", (age_group, gender, session["id"])
+    )
+    ctx.emit("table", table_id=table["id"])
+    return _table_view(conn, table)
+
+
+def set_allergens(ctx):
+    """お客様が指定したアレルギーをセッションに保存する。空リストで解除。"""
+    conn = ctx.conn
+    table = _table_row(conn, int(ctx.params["table_id"]))
+    session = _require_open_session(conn, table["id"])
+    keys = ctx.body.get("allergens")
+    if not isinstance(keys, list) or any(k not in ALLERGENS for k in keys):
+        raise ApiError(400, "アレルギーの指定が正しくありません")
+    ordered = [k for k in ALLERGENS if k in set(keys)]
+    conn.execute("UPDATE sessions SET allergens = ? WHERE id = ?", (",".join(ordered), session["id"]))
+    ctx.emit("table", table_id=table["id"])
+    ctx.emit("kitchen")
     return _table_view(conn, table)
 
 
@@ -314,12 +419,103 @@ def close_session(ctx):
     }
 
 
+# ---------------------------------------------------------------- おすすめ
+
+def profile_label(age_group, gender):
+    if age_group not in AGE_GROUPS:
+        return None
+    label = AGE_GROUPS[age_group]
+    if gender in GENDERS and gender != "unspecified":
+        label += f"・{GENDERS[gender]}"
+    return label
+
+
+def get_recommendations(ctx):
+    conn = ctx.conn
+    table = _table_row(conn, int(ctx.params["table_id"]))
+    session = _open_session(conn, table["id"])
+    if session is None or session["age_group"] not in AGE_GROUPS:
+        return {"profile": None, "items": []}
+    gender = session["gender"] if session["gender"] in GENDERS else "unspecified"
+    return {
+        "profile": {
+            "age_group": session["age_group"],
+            "gender": gender,
+            "label": profile_label(session["age_group"], gender),
+        },
+        "items": recommend(
+            conn, session["age_group"], gender,
+            exclude_session_id=session["id"], allergens=_allergens(session),
+        ),
+    }
+
+
+def _popularity(conn, age_group, gender, exclude_session_id):
+    """同じ年代（性別を答えていれば性別も）のお客様の過去の注文数を商品ごとに集計する。"""
+    sql = """SELECT oi.menu_item_id, SUM(oi.quantity) AS qty
+             FROM order_items oi
+             JOIN orders o   ON o.id = oi.order_id
+             JOIN sessions s ON s.id = o.session_id
+             WHERE oi.status != 'cancelled' AND s.id != ? AND s.age_group = ?"""
+    args = [exclude_session_id, age_group]
+    if gender != "unspecified":
+        sql += " AND s.gender = ?"
+        args.append(gender)
+    sql += " GROUP BY oi.menu_item_id"
+    return {r["menu_item_id"]: r["qty"] for r in conn.execute(sql, args)}
+
+
+def recommend(conn, age_group, gender, exclude_session_id=None, allergens=()):
+    """年代・性別に合う商品を点数順に返す。
+
+    点数 = 特徴タグと年代・性別の相性 + 同じ層での人気 + 店のおすすめ設定。
+    売り切れ、指定アレルゲンを含む商品、未成年へのお酒は候補から外す。
+    """
+    avoid = set(allergens)
+    weights = Counter(AGE_TAG_WEIGHTS[age_group])
+    weights.update(GENDER_TAG_WEIGHTS[gender])
+    popularity = _popularity(conn, age_group, gender, exclude_session_id)
+    top_sales = max(popularity.values(), default=0)
+    popular_reason = "同じ年代・性別のお客様に人気" if gender != "unspecified" else "同じ年代のお客様に人気"
+
+    candidates = []
+    for row in conn.execute("SELECT * FROM menu_items WHERE sold_out = 0 ORDER BY sort, id"):
+        tags = _tags(row)
+        if "alcohol" in tags and age_group in MINOR_AGE_GROUPS:
+            continue
+        if avoid.intersection(_allergens(row)):
+            continue
+        tag_scores = {t: weights[t] for t in tags if weights[t] > 0}
+        popular = POPULARITY_WEIGHT * popularity.get(row["id"], 0) / top_sales if top_sales else 0
+        score = sum(tag_scores.values()) + popular + (STAFF_PICK_WEIGHT if row["recommended"] else 0)
+        if score <= 0:
+            continue
+        if popular >= POPULARITY_WEIGHT / 2:
+            reason = popular_reason
+        elif tag_scores:
+            reason = TAG_REASONS[max(tag_scores, key=tag_scores.get)]
+        else:
+            reason = "料理長のおすすめ"
+        candidates.append((score, row, reason))
+
+    candidates.sort(key=lambda c: (-c[0], c[1]["sort"], c[1]["id"]))
+    picked, per_category = [], Counter()
+    for score, row, reason in candidates:
+        if per_category[row["category_id"]] >= MAX_PER_CATEGORY:
+            continue
+        per_category[row["category_id"]] += 1
+        picked.append({"menu_item_id": row["id"], "score": round(score, 2), "reason": reason})
+        if len(picked) == MAX_RECOMMENDATIONS:
+            break
+    return picked
+
+
 # ---------------------------------------------------------------- キッチン
 
 def kitchen_queue(ctx):
     rows = ctx.conn.execute(
         """SELECT oi.id, oi.order_id, oi.name, oi.quantity, oi.status,
-                  o.created_at, t.id AS table_id, t.name AS table_name
+                  o.created_at, t.id AS table_id, t.name AS table_name, s.allergens
            FROM order_items oi
            JOIN orders o   ON o.id = oi.order_id
            JOIN sessions s ON s.id = o.session_id
@@ -334,6 +530,7 @@ def kitchen_queue(ctx):
             "table_id": r["table_id"],
             "table_name": r["table_name"],
             "created_at": r["created_at"],
+            "allergen_labels": allergen_labels(_allergens(r)),
             "items": [],
         })
         order["items"].append(
@@ -397,6 +594,9 @@ ROUTES = [
     ("GET", r"/api/tables", list_tables),
     ("GET", r"/api/tables/(?P<table_id>\d+)", get_table),
     ("POST", r"/api/tables/(?P<table_id>\d+)/session", start_session),
+    ("POST", r"/api/tables/(?P<table_id>\d+)/profile", set_profile),
+    ("GET", r"/api/tables/(?P<table_id>\d+)/recommendations", get_recommendations),
+    ("POST", r"/api/tables/(?P<table_id>\d+)/allergens", set_allergens),
     ("POST", r"/api/tables/(?P<table_id>\d+)/orders", place_order),
     ("POST", r"/api/tables/(?P<table_id>\d+)/calls", create_call),
     ("POST", r"/api/tables/(?P<table_id>\d+)/checkout-request", request_checkout),

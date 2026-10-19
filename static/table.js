@@ -1,5 +1,7 @@
 // テーブル端末（お客様用タブレット）
-import { api, yen, el, toast, subscribe, storage, serialized, STATUS_LABEL, formatTime } from './common.js';
+import {
+  api, yen, el, toast, subscribe, storage, serialized, STATUS_LABEL, formatTime, AGE_OPTIONS, GENDER_OPTIONS,
+} from './common.js';
 
 const $ = (selector) => document.querySelector(selector);
 const MAX_QTY = 20;
@@ -16,6 +18,9 @@ const state = {
   tableId: parseTableId(new URLSearchParams(location.search).get('table')) ?? parseTableId(storage.get('tableId')),
   menu: null,
   table: null,
+  personal: { profile: null, items: [] }, // 年代・性別に合わせたおすすめ（/recommendations の結果）
+  profileDraft: { age_group: null, gender: null },
+  allergyDraft: new Set(),
   cart: [], // [{menu_item_id, quantity}]
   categoryId: null,
   lastStatus: null,
@@ -50,6 +55,26 @@ function findMenuItem(id) {
     if (item) return item;
   }
   return null;
+}
+
+// ---------------------------------------------------------------- アレルギー
+
+const avoidedAllergens = () => new Set(state.table?.session?.allergens ?? []);
+
+function allergenLabel(key) {
+  return state.menu?.allergens.find((a) => a.key === key)?.label ?? key;
+}
+
+// 指定アレルゲンのうち、その商品に含まれるもの
+function avoidedIn(item) {
+  const avoid = avoidedAllergens();
+  return item.allergens.filter((a) => avoid.has(a));
+}
+
+const isSafe = (item) => avoidedIn(item).length === 0;
+
+function allergenSummary(item) {
+  return item.allergens.length ? item.allergens.map(allergenLabel).join('・') : '表示対象のアレルギー物質なし';
 }
 
 function cartLines() {
@@ -92,9 +117,15 @@ function cartChanged() {
 const refresh = serialized(async () => {
   if (!state.tableId) return;
   try {
-    const [menu, table] = await Promise.all([api('/api/menu'), api(`/api/tables/${state.tableId}`)]);
+    const [menu, table, personal] = await Promise.all([
+      api('/api/menu'),
+      api(`/api/tables/${state.tableId}`),
+      // おすすめが取れなくても注文はできるようにする（ここの 404 をテーブル不明と誤解しない）
+      api(`/api/tables/${state.tableId}/recommendations`).catch(() => ({ profile: null, items: [] })),
+    ]);
     state.menu = menu;
     state.table = table;
+    state.personal = personal;
     render();
   } catch (err) {
     if (err.status === 404) forgetTable();
@@ -107,12 +138,75 @@ async function startSession(guests) {
   state.busy = true;
   try {
     state.table = await api(`/api/tables/${state.tableId}/session`, { method: 'POST', body: { guests } });
+    state.personal = { profile: null, items: [] };
+    state.categoryId = null;
     render();
+    openProfileDialog();
   } catch (err) {
     toast(err.message, 'error');
     refresh();
   } finally {
     state.busy = false;
+  }
+}
+
+async function saveProfile() {
+  const { age_group, gender } = state.profileDraft;
+  if (!age_group || !gender || state.busy) return;
+  state.busy = true;
+  $('#btn-save-profile').disabled = true;
+  try {
+    state.table = await api(`/api/tables/${state.tableId}/profile`, { method: 'POST', body: { age_group, gender } });
+    state.personal = await api(`/api/tables/${state.tableId}/recommendations`);
+    state.categoryId = FOR_YOU;
+    $('#profile-dialog').close();
+    render();
+    $('.menu-area').scrollTop = 0;
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    state.busy = false;
+    renderProfileOptions();
+  }
+}
+
+function openAllergyDialog() {
+  state.allergyDraft = avoidedAllergens();
+  renderAllergyOptions();
+  $('#allergy-dialog').showModal();
+}
+
+function renderAllergyOptions() {
+  $('#allergy-options').replaceChildren(...(state.menu?.allergens ?? []).map(({ key, label }) => el('button', {
+    type: 'button',
+    class: state.allergyDraft.has(key) ? 'selected' : '',
+    'aria-pressed': String(state.allergyDraft.has(key)),
+    onclick: () => {
+      if (state.allergyDraft.has(key)) state.allergyDraft.delete(key);
+      else state.allergyDraft.add(key);
+      renderAllergyOptions();
+    },
+  }, label)));
+}
+
+async function saveAllergies() {
+  if (state.busy) return;
+  state.busy = true;
+  $('#btn-save-allergy').disabled = true;
+  try {
+    state.table = await api(`/api/tables/${state.tableId}/allergens`, {
+      method: 'POST',
+      body: { allergens: [...state.allergyDraft] },
+    });
+    state.personal = await api(`/api/tables/${state.tableId}/recommendations`).catch(() => state.personal);
+    $('#allergy-dialog').close();
+    toast(state.allergyDraft.size ? 'アレルギーを含む商品を非表示にしました' : 'アレルギーの設定を解除しました', 'success');
+    render();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    state.busy = false;
+    $('#btn-save-allergy').disabled = false;
   }
 }
 
@@ -224,39 +318,131 @@ function render() {
   if ($('#history-dialog').open) renderHistory();
 }
 
+const RECOMMENDED = 'recommended';
+const FOR_YOU = 'for-you';
+
+// 表示する区分：先頭から「あなたへのおすすめ」「本日のおすすめ」、続いて通常のカテゴリ
+function menuSections() {
+  const categories = state.menu.categories;
+  const sections = categories.map((c) => ({ id: c.id, name: c.name, eyebrow: 'Menu', items: c.items.filter(isSafe) }));
+  const recommended = categories.flatMap((c) => c.items).filter((i) => i.recommended && isSafe(i));
+  if (recommended.length) {
+    sections.unshift({
+      id: RECOMMENDED,
+      name: '本日のおすすめ',
+      eyebrow: 'Recommended',
+      lead: '料理長が自信をもってお届けする、当店自慢の逸品です。',
+      items: recommended,
+      featured: true,
+    });
+  }
+  const { profile, items } = state.personal;
+  const personalItems = items
+    .map((r) => ({ item: findMenuItem(r.menu_item_id), reason: r.reason }))
+    .filter((r) => r.item && isSafe(r.item));
+  sections.unshift({
+    id: FOR_YOU,
+    name: 'あなたへのおすすめ',
+    eyebrow: 'For You',
+    lead: profile ? `${profile.label}のお客様におすすめのお料理を選びました。` : '',
+    items: personalItems.map((r) => r.item),
+    reasons: new Map(personalItems.map((r) => [r.item.id, r.reason])),
+    featured: true,
+    personal: true,
+  });
+  return sections;
+}
+
+function defaultSectionId(sections) {
+  if (state.personal.profile) return FOR_YOU;
+  return sections.find((s) => !s.personal)?.id ?? null;
+}
+
 function renderMenu() {
   if (!state.menu) return;
-  const categories = state.menu.categories;
-  if (!categories.some((c) => c.id === state.categoryId)) state.categoryId = categories[0]?.id ?? null;
+  const sections = menuSections();
+  if (!sections.some((s) => s.id === state.categoryId)) state.categoryId = defaultSectionId(sections);
 
-  $('#category-nav').replaceChildren(...categories.map((c) => el('button', {
+  $('#category-nav').replaceChildren(...sections.map((s) => el('button', {
     type: 'button',
-    class: c.id === state.categoryId ? 'active' : '',
+    class: [s.featured ? 'featured' : '', s.personal ? 'personal' : '', s.id === state.categoryId ? 'active' : '']
+      .join(' ').trim(),
     onclick: () => {
-      state.categoryId = c.id;
+      state.categoryId = s.id;
       renderMenu();
       $('.menu-area').scrollTop = 0;
     },
-  }, c.name)));
+  }, s.name)));
 
-  const category = categories.find((c) => c.id === state.categoryId);
-  $('#category-title').textContent = category?.name ?? '';
-  $('#menu-grid').replaceChildren(...(category?.items ?? []).map(menuCard));
+  const section = sections.find((s) => s.id === state.categoryId);
+  const needsProfile = Boolean(section?.personal && !state.personal.profile);
+  $('#category-eyebrow').textContent = section?.eyebrow ?? '';
+  $('#category-title').textContent = section?.name ?? '';
+  $('#category-lead').textContent = section?.lead ?? '';
+  $('#category-lead').hidden = !section?.lead;
+  $('#btn-edit-profile').hidden = !(section?.personal && state.personal.profile);
+  $('#profile-cta').hidden = !needsProfile;
+  $('#menu-grid').hidden = needsProfile;
+  $('#menu-empty').hidden = needsProfile || Boolean(section?.items.length) || avoidedAllergens().size === 0;
+  renderAllergyNotice();
+  $('#menu-grid').classList.toggle('featured', Boolean(section?.featured));
+  $('#menu-grid').replaceChildren(...(section?.items ?? [])
+    .map((item) => menuCard(item, section.featured, section.reasons?.get(item.id))));
 }
 
-function menuCard(item) {
+function menuCard(item, featured = false, reason = null) {
   const inCart = state.cart.find((l) => l.menu_item_id === item.id)?.quantity ?? 0;
   return el('button', {
     type: 'button',
-    class: `menu-card${item.sold_out ? ' sold-out' : ''}`,
+    class: `menu-card${featured ? ' featured' : ''}${item.sold_out ? ' sold-out' : ''}`,
     disabled: item.sold_out,
     onclick: () => openItemDialog(item),
   },
   el('span', { class: 'item-icon', 'aria-hidden': 'true' }, item.icon),
-  el('span', { class: 'menu-name' }, item.name),
-  el('span', { class: 'price' }, yen(item.price)),
+  el('span', { class: 'menu-body' },
+    reason ? el('span', { class: 'rec-badge' }, reason) : null,
+    !reason && item.recommended ? el('span', { class: 'rec-badge' }, 'おすすめ') : null,
+    el('span', { class: 'menu-name' }, item.name),
+    el('span', { class: 'menu-desc' }, item.description),
+    el('span', { class: 'price' }, yen(item.price)),
+    el('span', { class: 'menu-allergens' }, `アレルギー：${allergenSummary(item)}`)),
   item.sold_out ? el('span', { class: 'sold-out-label' }, '売り切れ') : null,
   inCart ? el('span', { class: 'in-cart', 'aria-label': `カートに${inCart}点` }, `×${inCart}`) : null);
+}
+
+function renderAllergyNotice() {
+  const avoid = [...avoidedAllergens()];
+  const button = $('#btn-allergy');
+  button.textContent = avoid.length ? `アレルギー（${avoid.length}）` : 'アレルギー';
+  button.classList.toggle('active', avoid.length > 0);
+  const hidden = state.menu.categories.flatMap((c) => c.items).filter((i) => !isSafe(i)).length;
+  $('#allergy-notice').hidden = avoid.length === 0;
+  $('#allergy-notice-text').textContent =
+    `アレルギー設定（${avoid.map(allergenLabel).join('・')}）により、${hidden}品を非表示にしています。`;
+}
+
+// ---------------------------------------------------------------- 年代・性別の入力
+
+function openProfileDialog() {
+  const session = state.table?.session;
+  state.profileDraft = { age_group: session?.age_group ?? null, gender: session?.gender ?? null };
+  renderProfileOptions();
+  $('#profile-dialog').showModal();
+}
+
+function renderProfileOptions() {
+  const optionButtons = (options, field) => options.map(([value, label]) => el('button', {
+    type: 'button',
+    class: state.profileDraft[field] === value ? 'selected' : '',
+    'aria-pressed': String(state.profileDraft[field] === value),
+    onclick: () => {
+      state.profileDraft[field] = value;
+      renderProfileOptions();
+    },
+  }, label));
+  $('#age-options').replaceChildren(...optionButtons(AGE_OPTIONS, 'age_group'));
+  $('#gender-options').replaceChildren(...optionButtons(GENDER_OPTIONS, 'gender'));
+  $('#btn-save-profile').disabled = state.busy || !state.profileDraft.age_group || !state.profileDraft.gender;
 }
 
 function stepper(line) {
@@ -274,9 +460,11 @@ function stepper(line) {
 function cartLineElement(line) {
   return el('li', { class: line.item.sold_out ? 'sold-out' : '' },
     el('div', { class: 'line-main' },
-      el('span', { class: 'line-name' }, `${line.item.icon} ${line.item.name}`),
+      el('span', { class: 'line-name' }, line.item.name),
       el('span', {}, yen(line.item.price * line.quantity))),
     line.item.sold_out ? el('span', { class: 'warning' }, '売り切れのため注文できません') : null,
+    isSafe(line.item) ? null
+      : el('span', { class: 'warning' }, `ご指定のアレルギー（${avoidedIn(line.item).map(allergenLabel).join('・')}）を含みます`),
     stepper(line));
 }
 
@@ -298,7 +486,7 @@ function renderReview() {
   }
   $('#review-list').replaceChildren(...lines.map(cartLineElement));
   $('#review-total').textContent = yen(cartTotal());
-  $('#btn-place-order').disabled = state.busy || lines.some((l) => l.item.sold_out);
+  $('#btn-place-order').disabled = state.busy || lines.some((l) => l.item.sold_out || !isSafe(l.item));
 }
 
 function renderHistory() {
@@ -318,16 +506,25 @@ function renderCallButton() {
   const calling = (state.table?.calls ?? []).some((c) => c.kind === 'staff' || c.kind === 'water');
   const button = $('#btn-call');
   button.classList.toggle('calling', calling);
-  button.textContent = calling ? '🔔 呼び出し中…' : '🔔 店員呼び出し';
+  button.textContent = calling ? '呼び出し中…' : '店員呼び出し';
 }
 
 function openItemDialog(item) {
   state.dialogItem = item;
   state.dialogQty = 1;
   $('#item-icon').textContent = item.icon;
+  $('#item-badge').hidden = !item.recommended;
   $('#item-name').textContent = item.name;
   $('#item-desc').textContent = item.description;
   $('#item-price').textContent = yen(item.price);
+  const avoid = avoidedAllergens();
+  $('#item-allergen-list').replaceChildren(...(item.allergens.length
+    ? item.allergens.map((a) => el('span', { class: `allergen-chip${avoid.has(a) ? ' avoided' : ''}` }, allergenLabel(a)))
+    : [el('span', { class: 'muted' }, '表示対象のアレルギー物質は含まれていません')]));
+  const hit = avoidedIn(item);
+  $('#item-allergen-warning').hidden = hit.length === 0;
+  $('#item-allergen-warning').textContent = `ご指定のアレルギー（${hit.map(allergenLabel).join('・')}）を含みます`;
+  $('#item-add').disabled = hit.length > 0;
   renderItemQty();
   $('#item-dialog').showModal();
 }
@@ -343,7 +540,7 @@ function renderItemQty() {
 
 async function showSetup() {
   showScreen('setup');
-  $('#table-name').textContent = 'テーブルオーダー';
+  $('#table-name').textContent = 'テーブル設定';
   try {
     const { tables } = await api('/api/tables');
     $('#setup-tables').replaceChildren(...tables.map((t) => el('button', {
@@ -381,6 +578,20 @@ function init() {
   }, `${n}名`)));
 
   $('#btn-change-table').addEventListener('click', forgetTable);
+  $('#btn-open-profile').addEventListener('click', openProfileDialog);
+  $('#btn-edit-profile').addEventListener('click', openProfileDialog);
+  $('#btn-save-profile').addEventListener('click', saveProfile);
+  $('#btn-allergy').addEventListener('click', openAllergyDialog);
+  $('#btn-allergy-notice').addEventListener('click', openAllergyDialog);
+  $('#btn-profile-allergy').addEventListener('click', () => {
+    $('#profile-dialog').close();
+    openAllergyDialog();
+  });
+  $('#btn-clear-allergy').addEventListener('click', () => {
+    state.allergyDraft.clear();
+    renderAllergyOptions();
+  });
+  $('#btn-save-allergy').addEventListener('click', saveAllergies);
   $('#item-minus').addEventListener('click', () => { state.dialogQty -= 1; renderItemQty(); });
   $('#item-plus').addEventListener('click', () => { state.dialogQty += 1; renderItemQty(); });
   $('#item-add').addEventListener('click', () => {

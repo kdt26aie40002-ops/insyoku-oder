@@ -3,44 +3,63 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>テーブルオーダー</title>
+<title>テーブルオーダー | 尾関屋</title>
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/table.css">
 <script type="module" src="/table.js"></script>
 </head>
 <body class="tablet">
 <header class="topbar">
-  <div class="brand"><span aria-hidden="true">🍽️</span><span id="table-name">テーブルオーダー</span></div>
+  <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span class="store-name">尾関屋</span><span class="brand-sep" aria-hidden="true"></span><span id="table-name"></span></div>
   <div id="topbar-actions" class="topbar-actions" hidden>
-    <button id="btn-history" type="button">📋 注文履歴</button>
-    <button id="btn-call" type="button">🔔 店員呼び出し</button>
-    <button id="btn-checkout" type="button" class="primary">💴 お会計</button>
+    <button id="btn-allergy" type="button" class="outline">アレルギー</button>
+    <button id="btn-history" type="button" class="outline">注文履歴</button>
+    <button id="btn-call" type="button" class="outline">店員呼び出し</button>
+    <button id="btn-checkout" type="button" class="primary">お会計</button>
   </div>
 </header>
 
 <section id="setup-screen" class="screen center" hidden>
+  <div class="ornament setup-ornament">Setup</div>
   <h1>テーブル設定</h1>
   <p class="muted">この端末を置くテーブルを選んでください。</p>
   <div id="setup-tables" class="choice-grid"></div>
 </section>
 
 <section id="welcome-screen" class="screen center" hidden>
-  <p class="welcome-sub">WELCOME</p>
-  <h1 class="welcome-title">いらっしゃいませ</h1>
-  <p>ご来店人数を選んでください</p>
-  <div id="guest-buttons" class="choice-grid guests"></div>
-  <p class="muted">9名様以上の場合はスタッフにお声がけください</p>
+  <div class="welcome-frame">
+    <div class="ornament">Welcome</div>
+    <p class="welcome-store">尾関屋</p>
+    <h1 class="welcome-title">いらっしゃいませ</h1>
+    <p class="welcome-lead">本日は尾関屋にご来店いただき、誠にありがとうございます。<br>ご来店人数をお選びください。</p>
+    <div id="guest-buttons" class="choice-grid guests"></div>
+    <p class="muted">9名様以上の場合はスタッフにお声がけください</p>
+  </div>
   <button id="btn-change-table" type="button" class="link-button">テーブル設定</button>
 </section>
 
 <main id="main-screen" class="screen order-layout" hidden>
   <nav id="category-nav" class="category-nav" aria-label="カテゴリ"></nav>
   <section class="menu-area">
-    <h2 id="category-title"></h2>
+    <header class="category-header">
+      <div id="category-eyebrow" class="ornament"></div>
+      <h2 id="category-title"></h2>
+      <p id="category-lead" class="muted" hidden></p>
+      <button id="btn-edit-profile" type="button" class="link-button" hidden>年代・性別を変更する</button>
+    </header>
+    <div id="allergy-notice" class="allergy-notice" hidden>
+      <span id="allergy-notice-text"></span>
+      <button id="btn-allergy-notice" type="button" class="link-button">変更</button>
+    </div>
+    <div id="profile-cta" class="profile-cta" hidden>
+      <p>年代と性別をお選びいただくと、<br>お客様にぴったりのお料理をご紹介します。</p>
+      <button id="btn-open-profile" type="button" class="primary big">おすすめを診断する</button>
+    </div>
     <div id="menu-grid" class="menu-grid"></div>
+    <p id="menu-empty" class="menu-empty muted" hidden>ご指定のアレルギーを含まない商品は、このカテゴリにはございません。</p>
   </section>
   <aside class="cart-panel">
-    <h2>ご注文カート</h2>
+    <h2 class="panel-title">ご注文カート</h2>
     <ul id="cart-list" class="cart-list"></ul>
     <p id="cart-empty" class="muted">メニューから商品を選んでください</p>
     <div class="cart-footer">
@@ -51,6 +70,7 @@
 </main>
 
 <section id="checkout-screen" class="screen center" hidden>
+  <div class="ornament">Thank you</div>
   <h1>お会計を承りました</h1>
   <p>スタッフがお伺いするまで、そのままお待ちください。</p>
   <p class="checkout-total">ご利用金額（税込）<strong id="checkout-total">¥0</strong></p>
@@ -58,16 +78,23 @@
 </section>
 
 <section id="thanks-screen" class="screen center" hidden>
-  <h1>ご来店ありがとうございました</h1>
-  <p class="muted">またのお越しをお待ちしております。</p>
+  <div class="ornament">Thank you</div>
+  <h1 class="welcome-title">ご来店ありがとうございました</h1>
+  <p class="muted">またのお越しを、尾関屋一同心よりお待ちしております。</p>
 </section>
 
 <dialog id="item-dialog">
   <div class="item-detail">
     <div id="item-icon" class="item-icon large"></div>
+    <p id="item-badge" class="rec-badge" hidden>本日のおすすめ</p>
     <h2 id="item-name"></h2>
     <p id="item-desc" class="muted"></p>
     <p id="item-price" class="price large"></p>
+    <div class="item-allergens">
+      <p class="field-label">アレルギー物質</p>
+      <div id="item-allergen-list" class="allergen-chips"></div>
+      <p id="item-allergen-warning" class="warning" hidden></p>
+    </div>
     <div class="stepper">
       <button type="button" id="item-minus" aria-label="減らす">−</button>
       <output id="item-qty">1</output>
@@ -100,8 +127,8 @@
 <dialog id="call-dialog">
   <h2>スタッフ呼び出し</h2>
   <div class="call-options">
-    <button type="button" class="big" data-call="staff">🔔 店員を呼ぶ</button>
-    <button type="button" class="big" data-call="water">💧 お水をください</button>
+    <button type="button" class="big outline" data-call="staff">店員を呼ぶ</button>
+    <button type="button" class="big outline" data-call="water">お水をください</button>
   </div>
   <div class="dialog-actions"><button type="button" data-close>閉じる</button></div>
 </dialog>
@@ -113,6 +140,34 @@
   <div class="dialog-actions">
     <button type="button" data-close>戻る</button>
     <button type="button" id="btn-request-checkout" class="primary big">お会計に進む</button>
+  </div>
+</dialog>
+
+<dialog id="allergy-dialog" class="profile-dialog">
+  <div class="ornament">Allergy</div>
+  <h2>アレルギーの設定</h2>
+  <p class="muted profile-note">お召し上がりいただけない食材をお選びください。<br>該当する商品はメニューとおすすめに表示されなくなります。</p>
+  <div id="allergy-options" class="option-grid allergy" role="group" aria-label="アレルギー物質"></div>
+  <p class="allergy-disclaimer">※ 同じ調理場・調理器具・揚げ油を使用しているため、ご指定の食材が微量に混入する可能性があります。重いアレルギーをお持ちの方は、ご注文前にスタッフへお申し付けください。</p>
+  <div class="dialog-actions">
+    <button type="button" id="btn-clear-allergy" class="link-button">すべて解除</button>
+    <button type="button" data-close>戻る</button>
+    <button type="button" id="btn-save-allergy" class="primary big">この内容で表示する</button>
+  </div>
+</dialog>
+
+<dialog id="profile-dialog" class="profile-dialog">
+  <div class="ornament">For You</div>
+  <h2>あなたにぴったりのお料理を<br>ご紹介します</h2>
+  <p class="muted profile-note">代表の方の年代と性別をお選びください。<br>おすすめ料理のご紹介にのみ使用します。</p>
+  <h3 class="field-label">年代</h3>
+  <div id="age-options" class="option-grid" role="group" aria-label="年代"></div>
+  <h3 class="field-label">性別</h3>
+  <div id="gender-options" class="option-grid gender" role="group" aria-label="性別"></div>
+  <p class="profile-allergy-hint">アレルギーをお持ちの方は <button type="button" id="btn-profile-allergy" class="link-button">アレルギーの設定</button> をお願いします。</p>
+  <div class="dialog-actions">
+    <button type="button" data-close>スキップ</button>
+    <button type="button" id="btn-save-profile" class="primary big" disabled>おすすめを見る</button>
   </div>
 </dialog>
 

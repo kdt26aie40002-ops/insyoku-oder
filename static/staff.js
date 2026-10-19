@@ -74,10 +74,16 @@ const closeTable = (table) => {
   );
 };
 
-async function toggleSoldOut(item) {
+const FLAG_MESSAGES = {
+  sold_out: (on) => (on ? '売り切れにしました' : '販売中に戻しました'),
+  recommended: (on) => (on ? 'おすすめに追加しました' : 'おすすめから外しました'),
+};
+
+async function toggleFlag(item, field) {
+  const value = !item[field];
   try {
-    await api(`/api/menu/${item.id}`, { method: 'PATCH', body: { sold_out: !item.sold_out } });
-    toast(`「${item.name}」を${item.sold_out ? '販売中' : '売り切れ'}にしました`, 'success');
+    await api(`/api/menu/${item.id}`, { method: 'PATCH', body: { [field]: value } });
+    toast(`「${item.name}」を${FLAG_MESSAGES[field](value)}`, 'success');
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -118,6 +124,7 @@ function tableCard(table) {
   el('span', {}, TABLE_STATUS_LABEL[table.status]),
   table.session ? el('span', { class: 'muted' }, `${table.session.guests}名・${formatTime(table.session.started_at)}〜`) : null,
   table.session ? el('span', { class: 'table-total' }, yen(table.total)) : null,
+  table.session?.allergen_labels.length ? el('span', { class: 'allergy-flag' }, '⚠ アレルギーあり') : null,
   pendingCount ? el('span', { class: 'muted' }, `未提供 ${pendingCount}品`) : null,
   table.calls.length ? el('span', { class: 'call-flag', title: table.calls.map((c) => CALL_LABEL[c.kind]).join('・') }, '🔔') : null);
 }
@@ -164,7 +171,11 @@ function renderDetail() {
   box.replaceChildren(
     el('h2', {}, table.name),
     el('p', { class: 'detail-meta' },
-      `${TABLE_STATUS_LABEL[table.status]}・${table.session.guests}名・${formatTime(table.session.started_at)} 着席`),
+      `${TABLE_STATUS_LABEL[table.status]}・${table.session.guests}名・${formatTime(table.session.started_at)} 着席`
+      + (table.session.profile_label ? `（代表：${table.session.profile_label}）` : '')),
+    table.session.allergen_labels.length
+      ? el('p', { class: 'allergy-alert' }, `⚠ アレルギー：${table.session.allergen_labels.join('・')}`)
+      : null,
     ...orders,
     el('div', { class: 'detail-total' }, el('span', {}, '合計（税込）'), el('strong', {}, yen(table.total))),
     el('div', { class: 'detail-actions' },
@@ -178,12 +189,21 @@ function renderMenuAdmin() {
     el('h2', {}, category.name),
     el('ul', {}, ...category.items.map((item) => el('li', { class: item.sold_out ? 'sold-out' : '' },
       el('span', { 'aria-hidden': 'true' }, item.icon),
-      el('span', { class: 'menu-name' }, item.name),
+      el('span', { class: 'menu-name' }, item.name,
+        el('small', { class: 'menu-allergens' }, item.allergens.length
+          ? item.allergens.map((a) => state.menu.allergens.find((x) => x.key === a)?.label ?? a).join('・')
+          : 'アレルギー物質なし')),
       el('span', { class: 'muted' }, yen(item.price)),
       el('button', {
         type: 'button',
+        class: `rec-toggle${item.recommended ? ' on' : ''}`,
+        'aria-pressed': String(item.recommended),
+        onclick: () => toggleFlag(item, 'recommended'),
+      }, item.recommended ? '✦ おすすめ' : 'おすすめにする'),
+      el('button', {
+        type: 'button',
         class: item.sold_out ? 'sold-out' : 'on-sale',
-        onclick: () => toggleSoldOut(item),
+        onclick: () => toggleFlag(item, 'sold_out'),
       }, item.sold_out ? '売り切れ' : '販売中')))))));
 }
 

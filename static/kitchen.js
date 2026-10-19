@@ -55,6 +55,9 @@ function ticket(order) {
     el('header', {},
       el('span', { class: 'ticket-table' }, order.table_name),
       el('span', { class: 'ticket-meta' }, `#${order.order_id}・${formatTime(order.created_at)}・${minutes}分経過`)),
+    order.allergen_labels.length
+      ? el('p', { class: 'ticket-allergy' }, `⚠ アレルギー：${order.allergen_labels.join('・')}`)
+      : null,
     el('ul', {}, ...order.items.map(itemRow)));
 }
 

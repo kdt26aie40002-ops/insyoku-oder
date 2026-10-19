@@ -9,6 +9,7 @@ import json
 import queue
 import socket
 import sqlite3
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -71,6 +72,9 @@ class EventBus:
 class OrderServer(ThreadingHTTPServer):
     daemon_threads = True
     log_requests = True
+    # Windows の SO_REUSEADDR は使用中のポートにも bind できてしまい、古いサーバーが残っていても
+    # 気づけない。二重起動はエラーにする。
+    allow_reuse_address = sys.platform != "win32"
 
     def __init__(self, address, db_path):
         self.db_path = Path(db_path)
@@ -219,9 +223,12 @@ def main(argv=None):
             Path(f"{db_path}{suffix}").unlink(missing_ok=True)
     db.init_db(db_path)
 
-    server = OrderServer((args.host, args.port), db_path)
+    try:
+        server = OrderServer((args.host, args.port), db_path)
+    except OSError as e:
+        sys.exit(f"ポート {args.port} を使用できません（すでにサーバーが起動している可能性があります）: {e}")
     port = server.server_address[1]
-    print(f"テーブルオーダーシステムを起動しました: http://localhost:{port}/")
+    print(f"尾関屋 テーブルオーダーシステムを起動しました: http://localhost:{port}/")
     lan = _lan_address()
     if lan and args.host in ("0.0.0.0", ""):
         print(f"  同じネットワークのタブレットからは http://{lan}:{port}/ を開いてください")
