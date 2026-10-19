@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>テーブルオーダー</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/table.css">
+<script type="module" src="/table.js"></script>
+</head>
+<body class="tablet">
+<header class="topbar">
+  <div class="brand"><span aria-hidden="true">🍽️</span><span id="table-name">テーブルオーダー</span></div>
+  <div id="topbar-actions" class="topbar-actions" hidden>
+    <button id="btn-history" type="button">📋 注文履歴</button>
+    <button id="btn-call" type="button">🔔 店員呼び出し</button>
+    <button id="btn-checkout" type="button" class="primary">💴 お会計</button>
+  </div>
+</header>
+
+<section id="setup-screen" class="screen center" hidden>
+  <h1>テーブル設定</h1>
+  <p class="muted">この端末を置くテーブルを選んでください。</p>
+  <div id="setup-tables" class="choice-grid"></div>
+</section>
+
+<section id="welcome-screen" class="screen center" hidden>
+  <p class="welcome-sub">WELCOME</p>
+  <h1 class="welcome-title">いらっしゃいませ</h1>
+  <p>ご来店人数を選んでください</p>
+  <div id="guest-buttons" class="choice-grid guests"></div>
+  <p class="muted">9名様以上の場合はスタッフにお声がけください</p>
+  <button id="btn-change-table" type="button" class="link-button">テーブル設定</button>
+</section>
+
+<main id="main-screen" class="screen order-layout" hidden>
+  <nav id="category-nav" class="category-nav" aria-label="カテゴリ"></nav>
+  <section class="menu-area">
+    <h2 id="category-title"></h2>
+    <div id="menu-grid" class="menu-grid"></div>
+  </section>
+  <aside class="cart-panel">
+    <h2>ご注文カート</h2>
+    <ul id="cart-list" class="cart-list"></ul>
+    <p id="cart-empty" class="muted">メニューから商品を選んでください</p>
+    <div class="cart-footer">
+      <div class="total-row"><span>合計（税込）</span><strong id="cart-total">¥0</strong></div>
+      <button id="btn-review" type="button" class="primary big" disabled>注文内容の確認</button>
+    </div>
+  </aside>
+</main>
+
+<section id="checkout-screen" class="screen center" hidden>
+  <h1>お会計を承りました</h1>
+  <p>スタッフがお伺いするまで、そのままお待ちください。</p>
+  <p class="checkout-total">ご利用金額（税込）<strong id="checkout-total">¥0</strong></p>
+  <button id="btn-checkout-history" type="button">ご注文内容を見る</button>
+</section>
+
+<section id="thanks-screen" class="screen center" hidden>
+  <h1>ご来店ありがとうございました</h1>
+  <p class="muted">またのお越しをお待ちしております。</p>
+</section>
+
+<dialog id="item-dialog">
+  <div class="item-detail">
+    <div id="item-icon" class="item-icon large"></div>
+    <h2 id="item-name"></h2>
+    <p id="item-desc" class="muted"></p>
+    <p id="item-price" class="price large"></p>
+    <div class="stepper">
+      <button type="button" id="item-minus" aria-label="減らす">−</button>
+      <output id="item-qty">1</output>
+      <button type="button" id="item-plus" aria-label="増やす">＋</button>
+    </div>
+  </div>
+  <div class="dialog-actions">
+    <button type="button" data-close>戻る</button>
+    <button type="button" id="item-add" class="primary big">カートに入れる</button>
+  </div>
+</dialog>
+
+<dialog id="review-dialog">
+  <h2>ご注文内容の確認</h2>
+  <ul id="review-list" class="cart-list"></ul>
+  <div class="total-row"><span>合計（税込）</span><strong id="review-total"></strong></div>
+  <div class="dialog-actions">
+    <button type="button" data-close>戻る</button>
+    <button type="button" id="btn-place-order" class="primary big">注文を確定する</button>
+  </div>
+</dialog>
+
+<dialog id="history-dialog">
+  <h2>注文履歴</h2>
+  <div id="history-list" class="history-list"></div>
+  <div class="total-row"><span>ご利用金額（税込）</span><strong id="history-total"></strong></div>
+  <div class="dialog-actions"><button type="button" data-close class="primary">閉じる</button></div>
+</dialog>
+
+<dialog id="call-dialog">
+  <h2>スタッフ呼び出し</h2>
+  <div class="call-options">
+    <button type="button" class="big" data-call="staff">🔔 店員を呼ぶ</button>
+    <button type="button" class="big" data-call="water">💧 お水をください</button>
+  </div>
+  <div class="dialog-actions"><button type="button" data-close>閉じる</button></div>
+</dialog>
+
+<dialog id="checkout-dialog">
+  <h2>お会計をしますか？</h2>
+  <p class="total-row"><span>ご利用金額（税込）</span><strong id="confirm-checkout-total"></strong></p>
+  <p id="checkout-cart-warning" class="warning" hidden>カートに未注文の商品があります。お会計に進むと追加注文はできません。</p>
+  <div class="dialog-actions">
+    <button type="button" data-close>戻る</button>
+    <button type="button" id="btn-request-checkout" class="primary big">お会計に進む</button>
+  </div>
+</dialog>
+
+<div id="toast-area" class="toast-area" aria-live="polite"></div>
+</body>
+</html>

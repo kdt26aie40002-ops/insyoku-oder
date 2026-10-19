@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ホール / レジ | テーブルオーダー</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/staff.css">
+<script type="module" src="/staff.js"></script>
+</head>
+<body class="staff">
+<header class="topbar">
+  <div class="brand"><span aria-hidden="true">🧾</span>ホール / レジ</div>
+  <nav class="tabs" aria-label="表示切り替え">
+    <button type="button" data-tab="floor" class="active">フロア</button>
+    <button type="button" data-tab="menu">品切れ設定</button>
+  </nav>
+</header>
+
+<main id="floor-view" class="staff-layout">
+  <section class="staff-main">
+    <section class="calls-panel">
+      <h2>呼び出し <span id="calls-count" class="count-badge" hidden></span></h2>
+      <ul id="calls-list" class="calls-list"></ul>
+      <p id="calls-empty" class="muted">現在、呼び出しはありません</p>
+    </section>
+    <h2>テーブル</h2>
+    <div id="table-grid" class="table-grid"></div>
+  </section>
+  <aside id="table-detail" class="table-detail"></aside>
+</main>
+
+<main id="menu-view" class="menu-admin" hidden>
+  <p class="muted">「売り切れ」にした商品はテーブル端末で注文できなくなります。</p>
+  <div id="menu-admin-list"></div>
+</main>
+
+<div id="toast-area" class="toast-area" aria-live="polite"></div>
+</body>
+</html>
